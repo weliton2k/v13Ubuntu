@@ -652,7 +652,7 @@ const MainListItems = (props) => {
     fontWeight: "bold",
     lineHeight: "normal"
   }}>
-    latest
+    Beta
   </span>
 </Typography>
               </React.Fragment>
