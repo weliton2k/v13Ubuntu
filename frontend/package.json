@@ -1,8 +1,8 @@
 {
   "name": "frontend",
   "version": "0.1.0",
-  "versionSystem": "v5.5.0",
-  "nomeEmpresa": "PLW Design",
+  "versionSystem": "v.13",
+  "nomeEmpresa": "Whaticket",
   "private": true,
   "dependencies": {
     "@date-io/date-fns": "^2.14.0",
