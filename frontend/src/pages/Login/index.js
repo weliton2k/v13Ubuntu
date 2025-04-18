@@ -28,7 +28,7 @@ const useStyles = makeStyles((theme) => ({
     justifyContent: 'center',
     background: theme.palette.type === 'dark' 
       ? 'linear-gradient(135deg, #121212 0%, #1e1e1e 100%)' 
-      : 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+      : 'linear-gradient(135deg, #2f0549 0%, #2f0549 100%)',
     position: 'relative',
     overflow: 'hidden',
     '&::before': {
