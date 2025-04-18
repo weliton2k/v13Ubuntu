@@ -642,7 +642,7 @@ const MainListItems = (props) => {
     gap: "4px"
   }}
 >
-  {`${version}`}
+ Versão: {`${version}`}
   <span style={{
     backgroundColor: "green",
     color: "white",
