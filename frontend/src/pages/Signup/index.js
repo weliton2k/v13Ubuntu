@@ -51,7 +51,7 @@ const Copyright = () => {
     <Typography variant="body2" color="textSecondary" align="center">
       {"Copyright © "}
       <Link color="inherit" href="#">
-        PLW
+        Whaticket Saas
       </Link>{" "}
       {new Date().getFullYear()}
     </Typography>
