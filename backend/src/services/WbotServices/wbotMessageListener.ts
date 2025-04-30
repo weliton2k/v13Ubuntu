@@ -2364,7 +2364,7 @@ const handleMessage = async (
 };
 
 
-export const handleMsgAck = async (
+const handleMsgAck = async (
   msg: WAMessage,
   chat: number | null | undefined
 ) => {
@@ -2392,7 +2392,6 @@ export const handleMsgAck = async (
         message: messageToUpdate,
       }
     );
-
   } catch (err) {
     Sentry.captureException(err);
     logger.error(`Error handling message ack. Err: ${err}`);
@@ -2490,54 +2489,107 @@ const filterMessages = (msg: WAMessage): boolean => {
 };
 const wbotMessageListener = async (wbot: Session, companyId: number): Promise<void> => {
   try {
+    const messageCache = new Set<string>();
+    const CACHE_TIMEOUT = 1000 * 60 * 5; 
+
+    setInterval(() => {
+      messageCache.clear();
+    }, CACHE_TIMEOUT);
+
+    const messageQueue: proto.IWebMessageInfo[] = [];
+    let processingQueue = false;
+
+    const processMessageQueue = async () => {
+      if (processingQueue || messageQueue.length === 0) return;
+      
+      processingQueue = true;
+      try {
+        const messagesToProcess = [...messageQueue];
+        messageQueue.length = 0;
+
+        await Promise.all(
+          messagesToProcess.map(async (message) => {
+            try {
+              const messageId = message.key.id!;
+              
+              if (messageCache.has(messageId)) return;
+              messageCache.add(messageId);
+
+              const messageExists = await Message.findOne({
+                where: { id: messageId, companyId },
+                attributes: ['id']
+              });
+
+              if (!messageExists) {
+                await Promise.all([
+                  handleMessage(message, wbot, companyId),
+                  verifyRecentCampaign(message, companyId),
+                  verifyCampaignMessageAndCloseTicket(message, companyId)
+                ]);
+              }
+            } catch (err) {
+              logger.error(`Error processing message ${message.key.id}: ${err}`);
+              Sentry.captureException(err);
+            }
+          })
+        );
+      } finally {
+        processingQueue = false;
+      }
+    };
+
+    setInterval(processMessageQueue, 100);
+
     wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
       const messages = messageUpsert.messages
         .filter(filterMessages)
         .map(msg => msg);
 
-      if (!messages) return;
+      if (!messages?.length) return;
 
-      messages.forEach(async (message: proto.IWebMessageInfo) => {
-        const messageExists = await Message.count({
-          where: { id: message.key.id!, companyId }
-        });
+      messageQueue.push(...messages);
+    });
 
-        if (!messageExists) {
-          await handleMessage(message, wbot, companyId);
-          await verifyRecentCampaign(message, companyId);
-          await verifyCampaignMessageAndCloseTicket(message, companyId);
+    wbot.ev.on("messages.update", async (messageUpdate: WAMessageUpdate[]) => {
+      if (!messageUpdate?.length) return;
+
+      const updates = messageUpdate.map(async (message: WAMessageUpdate) => {
+        try {
+          if (message.update.status) {
+            await (wbot as WASocket)!.readMessages([message.key]);
+          }
+
+          if (
+            message.update.messageStubType === 1 && 
+            message.key.remoteJid !== 'status@broadcast'
+          ) {
+            await MarkDeleteWhatsAppMessage(
+              message.key.remoteJid,
+              null,
+              message.key.id,
+              companyId
+            );
+          }
+
+          await handleMsgAck(message, message.update.status);
+        } catch (err) {
+          logger.error(`Error processing message update: ${err}`);
+          Sentry.captureException(err);
         }
       });
+
+      await Promise.all(updates);
     });
 
-    wbot.ev.on("messages.update", (messageUpdate: WAMessageUpdate[]) => {
-      if (messageUpdate.length === 0) return;
-      messageUpdate.forEach(async (message: WAMessageUpdate) => {
-        (wbot as WASocket)!.readMessages([message.key])
-
-        await addMsgAckJob(message, message.update.status);
-      });
-    });
-
-    wbot.ev.on("messages.update", (messageUpdate: WAMessageUpdate[]) => {
-      if (messageUpdate.length === 0) return;
-      messageUpdate.forEach(async (message: WAMessageUpdate) => {
-        await addMsgAckJob(message, message.update.status);
-      });
-    });
-
-    wbot.ev.on("chats.update", async (chatUpdate: Partial<Chat>[]) => {
-      if (chatUpdate.length === 0) return;
-
-      chatUpdate.forEach(async (chat: Partial<Chat>) => {
-        await CreateOrUpdateBaileysChatService(wbot.id, chat);
-      });
-    });
   } catch (error) {
     Sentry.captureException(error);
     logger.error(`Error handling wbot message listener. Err: ${error}`);
+    
+    setTimeout(() => {
+      wbotMessageListener(wbot, companyId)
+        .catch(err => logger.error(`Error reconnecting wbot: ${err}`));
+    }, 5000);
   }
 };
 
-
-export { handleMessage, wbotMessageListener };
+export { handleMessage, wbotMessageListener, handleMsgAck };
